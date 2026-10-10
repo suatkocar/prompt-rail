@@ -16,6 +16,12 @@ const text = tree => flatten(tree).filter(value => typeof value === 'string').jo
 const buttons = tree => flatten(tree).filter(node => node?.type === 'Button')
 const hasImage = tree => flatten(tree).some(node => node?.type === 'Image')
 const hasRail = tree => buttons(tree).some(node => node.props.key === 'jump-0')
+const hasInbox = tree => buttons(tree).some(node => node.props.key === 'inbox-open')
+const visibleText = tree => {
+  if (tree == null || tree?.props?.display === 'none') return ''
+  if (Array.isArray(tree)) return tree.map(visibleText).join(' ')
+  return typeof tree === 'object' ? visibleText(tree.children) : String(tree)
+}
 const emptyLedger = { card: null, items: [], closed: [], findings: [], prs: [], nextId: 1, turn: 0, batchTurn: 0 }
 const card = { goal: 'Review fixture changes', done: ['Read fixtures'], now: 'Ready for review', running: [], updatedAt: 0 }
 const ledger = { ...emptyLedger, card, turn: 1 }
@@ -47,12 +53,34 @@ for (const order of permutations(Object.keys(sources))) {
     const check = (tree, { rail = true, image = true, inbox = true } = {}) => {
       assert.equal(hasRail(tree), rail)
       assert.equal(hasImage(tree), image)
-      assert.equal(text(tree).includes(card.goal), inbox)
+      assert.equal(hasInbox(tree), inbox)
       assert.ok(text(tree).includes('Host band'))
     }
     check(await render())
     check(await render({ ...bandInput, props: { ...bandInput.props, isWorking: true } }))
     check(await render({ ...bandInput, props: { ...bandInput.props, hasSurvey: true } }), { rail: false, image: false, inbox: false })
+
+    // Hover is expressed by real SDK scopes, not an idle copy of the latest
+    // message. Summary toggling changes no other plugin's content or state.
+    let quiet = await render()
+    assert.ok(!visibleText(quiet).includes(card.goal))
+    assert.ok(!visibleText(quiet).includes('prompt p'))
+    const hoverCard = flatten(quiet).find(node => node?.props?.key === 'card-0')
+    assert.deepEqual(hoverCard.props.hover, { scope: 'prompt-rail-0', display: 'flex' })
+    assert.equal(hoverCard.props.display, 'none')
+    assert.equal(buttons(quiet).find(node => node.props.key === 'inbox-open').props.variant, 'secondary')
+    await buttons(quiet).find(node => node.props.key === 'inbox-summary').props.onPress()
+    quiet = await render()
+    assert.ok(visibleText(quiet).includes(card.goal))
+    check(quiet)
+    await buttons(quiet).find(node => node.props.key === 'inbox-summary').props.onPress()
+    assert.ok(!visibleText(await render()).includes(card.goal))
+    for (const bodyColumns of [40, 80, 120]) {
+      const resized = await render({ ...bandInput, props: { ...bandInput.props, bodyColumns } })
+      check(resized)
+      assert.ok(!visibleText(resized).includes('prompt p'))
+      assert.equal(flatten(resized).find(node => node?.props?.key === 'rail-layout').props.height, bodyColumns === 40 ? 2 : 1)
+    }
 
     // Jump routing stays with Prompt Rail; the other hooks pass it through.
     await host.dispatch('ui.press', { plugin: 'prompt-rail', element: 'jump-0', component: 'AbovePrompt', requestId: 'above-prompt' })
@@ -73,7 +101,7 @@ for (const order of permutations(Object.keys(sources))) {
     // Stop, return and empty states have separate Inbox render branches.
     host.state.set('inbox:stop', { kind: 'sign-in', detail: 'authentication_failed', resets: null, at: 0 })
     tree = await render()
-    check(tree, { inbox: false })
+    check(tree)
     assert.ok(text(tree).includes('Stopped'))
     host.state.set('inbox:stop', null)
     host.state.set('inbox:ledger', structuredClone(emptyLedger))
@@ -82,7 +110,7 @@ for (const order of permutations(Object.keys(sources))) {
     check(tree)
     assert.ok(text(tree).includes('Last session'))
     host.state.set('inbox:previous', null)
-    check(await render(), { inbox: false })
+    check(await render())
     host.state.set('inbox:ledger', structuredClone(ledger))
 
     for (const mode of ['off', 'vertical', 'horizontal']) {

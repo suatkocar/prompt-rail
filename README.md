@@ -17,6 +17,9 @@ A rail of your prompts for Claude Code. Hover to read one, click to jump back to
 
 Based on [oikon48/prompt-rail](https://github.com/oikon48/prompt-rail). Version 0.7.3 adds an AgentsView fallback for prompts no longer drawn in the terminal. It preserves observed viewport rows across jumps and composes the prompt band with other mods instead of replacing it. Inbox also needs its shared-band compatibility fix; [validation and upstream notes](docs/validation.md) record the tested combination.
 
+Version 0.7.5 makes the horizontal terminal rail quiet at rest: a **HISTORY**
+row shows the bars, and prompt text appears only on hover or keyboard focus.
+
 ## Quick start
 
 1. Turn on function hooks (early access, Claude Code 2.1.280+) in `~/.claude/settings.json`:
@@ -45,7 +48,19 @@ Mouse works best with `"tui": "fullscreen"`.
 
 ### Horizontal, above the prompt (default)
 
-<img src="docs/horizontal.png" alt="The horizontal rail: a text line with the hovered prompt and its turn summary over a row of bars" width="800">
+```text
+HISTORY ││┃││
+```
+
+Hover a bar to preview its prompt and turn details beside the bars. Moving the
+pointer away clears the preview; the most recent prompt is not shown by default.
+A narrow terminal reserves a second row for the preview, so hovering does not
+move the chat. Very narrow terminals omit the label to leave room for the bars.
+
+When the history does not fit, click **‹** or **›** to browse the hidden bars
+without jumping the transcript. Reading a different prompt or sending a new
+message returns the window to the current position. Click a bar to jump as usual.
+The desktop and vertical layouts are unchanged.
 
 ### Vertical, beside the transcript
 

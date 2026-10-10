@@ -1032,6 +1032,9 @@ export const register: Register = (on, options) => {
   // it, and the timer that stops showing it.
   let ringed: number | undefined
   let ringFade: Timer | undefined
+  // Paging changes only the bars. Reading another prompt or starting a turn
+  // returns the window to the transcript's current position.
+  let railPage: { first: number; currentKey: string } | undefined
   const unring = () => {
     ringFade?.cancel()
     ringFade = undefined
@@ -1160,6 +1163,8 @@ export const register: Register = (on, options) => {
   }
 
   on('classic.SessionStart', async ($, e, next) => {
+    railPage = undefined
+    unring()
     navigation.generation++
     navigation.pending = undefined
     if (e.source === 'clear') {
@@ -1267,12 +1272,18 @@ export const register: Register = (on, options) => {
   // A prompt was sent: typed, or delivered from Remote Control. Its rows drawn
   // before the stored one are pending (see listDrawn).
   on('prompt.submit', async ($, e, next) => {
+    const wasPaged = railPage !== undefined
+    railPage = undefined
     unring()
-    if (PROMPT_KINDS.has(e.origin.kind) && noteSent(e.text.replace(VIEW_CONTEXT, '').trim())) await redrawRail($)
+    const changed = PROMPT_KINDS.has(e.origin.kind) && noteSent(e.text.replace(VIEW_CONTEXT, '').trim())
+    if (wasPaged || changed) await redrawRail($)
     return next(e)
   })
   on('session.receive', async ($, e, next) => {
-    if (PROMPT_KINDS.has(e.origin.kind) && noteSent(e.text.replace(VIEW_CONTEXT, '').trim())) await redrawRail($)
+    const wasPaged = railPage !== undefined
+    railPage = undefined
+    const changed = PROMPT_KINDS.has(e.origin.kind) && noteSent(e.text.replace(VIEW_CONTEXT, '').trim())
+    if (wasPaged || changed) await redrawRail($)
     return next(e)
   })
 
@@ -1414,25 +1425,20 @@ export const register: Register = (on, options) => {
       ))
 
     if (mode === 'horizontal') {
-      // Two rows: the text line, then the bars beside the prompt. The text line
-      // shows the prompt being read, dim, and the hovered one's card painted
-      // over it; the bar of the prompt being read is heavy.
-      //
-      // Only the terminal's grid of cells hides the dim line under a card. A
-      // page (the desktop app) paints a card with no background, in a face of
-      // its own widths, so the line beneath shows through: there the text line
-      // holds the hovered card alone, and the prompt being read is named after
-      // the bars. A clicked bar keeps its native ring there beside the hovered
-      // one, so the band takes no ring at all (see the band's ui.focus).
+      // The terminal reserves a preview beside the bars, or on a second row
+      // when narrow. Hover reveals it without moving the transcript. Desktop
+      // rendering retains its separate hover row and current-prompt label.
       const isCellGrid = e.surface === 'terminal'
       isBandOnGrid = isCellGrid
       const width = Math.max(8, e.props.bodyColumns - 2 - RAIL_INSET)
       const current = currentIndex()
       drawnCurrent = current
       const shownRing = isCellGrid && ringed !== undefined && ringed < entries.length ? ringed : undefined
-      // Cells for the bars and their marks: the whole line, or beside the
-      // label of the prompt being read, a gap and a few words of it.
-      const barCells = isCellGrid ? width : Math.max(MIN_DESKTOP_BARS, width - 1 - MIN_CARD_TEXT)
+      const labelCells = isCellGrid && width >= 24 ? 8 : 0
+      const inlinePreview = isCellGrid && width >= 60
+      const barCells = isCellGrid
+        ? inlinePreview ? Math.min(32, Math.floor((width - labelCells) / 3)) : width - labelCells
+        : Math.max(MIN_DESKTOP_BARS, width - 1 - MIN_CARD_TEXT)
       // More prompts than cells: a window of bars centered on the prompt being
       // read (the newest when none is known), `‹` and `›` marking what it hides.
       // It stays put while the ring moves: the ring keeps its place in the row,
@@ -1440,17 +1446,27 @@ export const register: Register = (on, options) => {
       const isOverflowing = entries.length > barCells
       const capacity = isOverflowing ? barCells - 2 : entries.length
       const center = current >= 0 ? current : entries.length - 1
-      const first = Math.min(Math.max(0, center - Math.floor(capacity / 2)), entries.length - capacity)
+      const currentKey = entries[center]?.id ?? ''
+      if (railPage?.currentKey !== currentKey) railPage = undefined
+      const first = Math.min(Math.max(0, isCellGrid && railPage ? railPage.first : center - Math.floor(capacity / 2)), entries.length - capacity)
       const shown = entries.slice(first, first + capacity)
       const hidesAfter = first + capacity < entries.length
+      const previewWidth = inlinePreview ? width - labelCells - (isOverflowing ? barCells : entries.length) - 1 : width
       const label = (i: number, room = width) => `#${i + 1} ${oneLine(entries[i]?.text ?? '', room - `#${i + 1} `.length)}`
       // The hovered prompt's card also sums up its turn.
-      const card = (i: number) => {
+      const card = (i: number, room = width) => {
         const entry = entries[i]
-        return entry ? `#${i + 1} ${withTurn(entry, width - `#${i + 1} `.length)}` : ''
+        return entry ? `#${i + 1} ${withTurn(entry, room - `#${i + 1} `.length)}` : ''
+      }
+      const page = async (direction: number) => {
+        unring()
+        railPage = { first: Math.max(0, Math.min(entries.length - capacity, first + direction * capacity)), currentKey }
+        await redrawRail($)
       }
       const bars = [
-        isOverflowing ? <Text dimColor>{first > 0 ? '‹' : ' '}</Text> : null,
+        isOverflowing ? isCellGrid && first > 0
+          ? <Button key="rail-earlier" plain dimColor label="‹" onPress={() => page(-1)} />
+          : <Text dimColor>{first > 0 ? '‹' : ' '}</Text> : null,
         ...shown.map((entry, offset) => {
           const i = first + offset
           return (
@@ -1465,7 +1481,9 @@ export const register: Register = (on, options) => {
             />
           )
         }),
-        hidesAfter ? <Text dimColor>›</Text> : null,
+        isOverflowing ? isCellGrid && hidesAfter
+          ? <Button key="rail-later" plain dimColor label="›" onPress={() => page(1)} />
+          : <Text dimColor>{hidesAfter ? '›' : ' '}</Text> : null,
       ]
       if (!isCellGrid) {
         // Each bar and mark a cell wide, then a gap.
@@ -1489,18 +1507,29 @@ export const register: Register = (on, options) => {
           </Box>
         )
       }
+      const preview = (
+        <Box key="rail-preview" height={1} width={previewWidth} flexShrink={0}>
+          {shownRing !== undefined && <Text key="rail-ring" wrap="truncate-end">{padTo(card(shownRing, previewWidth), previewWidth)}</Text>}
+          {shown.map((_, offset) => {
+            const i = first + offset
+            return (
+              <Box key={`card-${i}`} position="absolute" top={0} left={0} display="none" hover={{ scope: `prompt-rail-${i}`, display: 'flex' }}>
+                <Text wrap="truncate-end">{padTo(card(i, previewWidth), previewWidth)}</Text>
+              </Box>
+            )
+          })}
+        </Box>
+      )
       return together(
         <Box flexDirection="column" paddingLeft={RAIL_INSET}>
-          <Box height={1} width={width}>
-            {/* With no prompt known on screen, the newest: an empty line reads as a broken rail. */}
-            {shownRing === undefined ? <Text dimColor wrap="truncate-end">{label(center)}</Text> : <Text wrap="truncate-end">{padTo(card(shownRing), width)}</Text>}
-            {entries.map((_, i) => (
-              <Box key={`card-${i}`} position="absolute" top={0} left={0} display="none" hover={{ scope: `prompt-rail-${i}`, display: 'flex' }}>
-                <Text wrap="truncate-end">{padTo(card(i), width)}</Text>
-              </Box>
-            ))}
+          <Box key="rail-layout" flexDirection="column" width={width} height={inlinePreview ? 1 : 2}>
+            <Box flexDirection="row" height={1}>
+              {labelCells > 0 && <Box width={labelCells} flexShrink={0}><Text dimColor>HISTORY</Text></Box>}
+              <Box flexDirection="row" flexShrink={0}>{bars}</Box>
+              {inlinePreview && <Box marginLeft={1}>{preview}</Box>}
+            </Box>
+            {!inlinePreview && preview}
           </Box>
-          <Box flexDirection="row">{bars}</Box>
         </Box>
       )
     }

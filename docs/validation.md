@@ -2,6 +2,32 @@
 
 Date: 2026-10-10. Local environment: macOS arm64, Claude Code 2.1.296.
 
+## Version 0.7.5: compact terminal history
+
+The horizontal terminal rail reserves a preview beside its bars on wide screens
+and on one fixed additional row on narrow screens. The preview is empty until
+a bar is hovered or receives keyboard focus. Overflow arrows page the bars
+without navigating the transcript. Desktop rendering, native jumps and the
+AgentsView fallback retain their existing behavior.
+
+Observed local checks:
+
+- Strict marketplace/plugin validation and SDK type checking passed.
+- All 114 official plugin tests passed, including idle, keyboard, narrow-width,
+  paging and new-prompt reset cases.
+- All 16 navigation and 34 archive resolver tests passed.
+- The real large-transcript test passed.
+- All six loading orders with the actual Inbox and Image View hooks passed.
+  The harness checked collapsed/expanded summaries, empty Inbox styling, hidden
+  hover scopes, fixed preview heights at 40/80/120 columns and retained controls.
+- The companion Inbox change passed its complete check script, including the
+  Codex companion's bundles, types and tests. Its model prompts were unchanged.
+
+These checks exercise the compiled hooks and SDK test interfaces. They do not
+prove terminal painting or physical pointer hit testing. Computer Use refused
+access to Ghostty, so no live hover verification is claimed. A disposable
+UI-only session was closed without submitting a model prompt.
+
 ## Version 0.7.3: missing-row archive fallback
 
 Explicit prompt clicks and direct jump commands first try the native scroll.
