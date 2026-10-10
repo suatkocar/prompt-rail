@@ -110,6 +110,40 @@ test('resolves ordinal gaps using the actual last ordinal, never the message cou
   assert.equal(f.calls.some(argv => argv[0] === '/usr/bin/open'), false)
 })
 
+for (const count of [64, 128]) {
+  test(`resolves ${count} user messages when the empty terminal page omits its revision`, async () => {
+    const rows = Array.from({ length: count }, (_, i) => message({ ordinal: i * 10, source_uuid: `other-${i}`, content: `Other prompt ${i}` }))
+    rows[count - 1] = message({ ordinal: count * 10 })
+    let page = 0
+    const f = fixture({ run: async argv => {
+      if (argv[2] === 'get') return result(metadata)
+      const messages = rows.slice(page++ * 64, page * 64)
+      return result(messages.length ? { transcript_revision: '22', messages } : { messages: [] })
+    } })
+    const link = await resolveArchiveLink(f.engine.process.run, sessionId, prompt, () => true)
+    assert.equal(link.ordinal, count * 10)
+    assert.equal(f.calls.filter(argv => argv[2] === 'get').length, 2)
+  })
+}
+
+test('an unversioned empty page requires a fresh matching session revision before opening', async () => {
+  const rows = Array.from({ length: 64 }, (_, i) => message({ ordinal: i * 10, source_uuid: `other-${i}` }))
+  rows[63] = message({ ordinal: 946 })
+  let gets = 0, page = 0
+  const f = fixture({ run: async argv => {
+    if (argv[2] === 'get') return result({ ...metadata, transcript_revision: ++gets === 1 ? '22' : '23' })
+    return result(page++ === 0 ? { transcript_revision: '22', messages: rows } : { messages: [] })
+  } })
+  await assert.rejects(openArchivedPrompt(f.engine.process.run, sessionId, prompt, () => true), /changed while finding/)
+  assert.equal(gets, 2)
+  assert.equal(f.calls.some(argv => argv[0] === '/usr/bin/open'), false)
+})
+
+test('a nonempty unversioned page cannot bypass revision validation', async () => {
+  const f = fixture({ run: async argv => result(argv[2] === 'get' ? metadata : { messages: [message()] }) })
+  await assert.rejects(resolveArchiveLink(f.engine.process.run, sessionId, prompt, () => true), /changed while finding/)
+})
+
 test('opens Chrome with an argument vector only after the exact message is resolved', async () => {
   const f = fixture()
   await openArchivedPrompt(f.engine.process.run, sessionId, prompt, () => true)

@@ -99,7 +99,15 @@ export async function resolveArchiveLink(runCommand: ArchiveRun, sessionId: stri
   for (let pageNumber = 0; pageNumber < MAX_PAGES; pageNumber++) {
     const page: Page = await read(['messages', session.id, '--role', 'user', '--from', String(from), '--limit', String(PAGE_SIZE)])
     if (!Array.isArray(page?.messages)) throw new Error('AgentsView returned an unreadable message list.')
-    if (session.transcript_revision !== undefined && page.transcript_revision !== session.transcript_revision) throw new Error('AgentsView changed while finding this message. Click again to retry.')
+    if (session.transcript_revision !== undefined && page.transcript_revision !== session.transcript_revision) {
+      // Older CLI versions omit the revision on an empty terminal page. This
+      // occurs at exact page-size multiples; confirm the session stayed stable
+      // rather than accepting an unversioned or genuinely changed message page.
+      const stale = () => new Error('AgentsView changed while finding this message. Click again to retry.')
+      if (page.messages.length !== 0 || page.transcript_revision !== undefined) throw stale()
+      const current = await read(['get', session.id])
+      if (current?.id !== session.id || current.agent !== session.agent || current.transcript_revision !== session.transcript_revision) throw stale()
+    }
     let last = from - 1
     for (const message of page.messages) {
       if (!Number.isSafeInteger(message?.ordinal) || message.ordinal <= last || message.session_id !== session.id || typeof message.content !== 'string') throw new Error('AgentsView returned inconsistent message coordinates.')

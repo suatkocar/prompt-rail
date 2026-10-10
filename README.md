@@ -112,6 +112,11 @@ scans. A click reads user-message pages, bounded to 12 seconds, 32 pages of 64
 messages and 16 MiB of accumulated CLI output. These are lookup limits, not
 limits on the source transcript size. No extra transcript copy is saved.
 
+Some AgentsView versions omit the transcript revision on an empty final page.
+When a conversation contains an exact multiple of 64 user messages, the resolver
+rechecks the session revision before accepting that empty page. Changed archives
+and nonempty pages without a matching revision still fail safely.
+
 The link uses AgentsView's `msg` ordinal. For sufficiently long, plain text
 unique among the scanned user messages, it also includes a Chrome text fragment
 to counter an observed scroll-position drift in the viewer. The fragment is a
