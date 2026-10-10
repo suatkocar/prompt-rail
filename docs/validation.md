@@ -63,6 +63,15 @@ best-effort positioning aid; the validated session and ordinal remain the
 message identity. No AgentsView rebuild, sync command, installation or settings
 change was performed.
 
+Version 0.7.3 was then installed and enabled at user scope. The CLI confirmed the
+upgrade from 0.7.2 and resolved `readFromFolder` to the canonical checkout. Both
+`index.tsx` and `agentsview.ts` had identical SHA-256 hashes in the tested
+worktree, canonical checkout and installed cache. The feature commit was pushed
+to the personal fork. Activation metadata was backed up before updating;
+semantic comparisons found no changes to unrelated settings, marketplace
+metadata or other plugin installations. The CLI requires existing sessions to
+restart to apply the update.
+
 The older sections below record the 0.7.2 baseline, not this release's current
 installation or browser verification.
 

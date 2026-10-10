@@ -51,5 +51,5 @@ personal-fork and user-scoped installation pattern.
   experiment displayed its selected message with a text fragment. The final
   fresh-browser check stayed on the viewer's loading screen, both with and
   without a text fragment; final painting is not claimed as verified.
-- [ ] Document results and limits, bump the plugin version, commit, push the
+- [x] Document results and limits, bump the plugin version, commit, push the
   personal fork, update the global installation and verify its source/version.
