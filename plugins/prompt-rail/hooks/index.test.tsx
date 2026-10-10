@@ -1,6 +1,14 @@
 import { test, expect, mock } from 'claude-code/testing'
 import { bar, drawnRow, jumpNotice, noteScroll, pickPrompt, rowKey, stepFrom, tick, turnLine } from './index.tsx'
 
+// The test runner exposes real timers for viewport reports separated in time.
+declare const setTimeout: (callback: (value: void) => void, milliseconds: number) => unknown
+
+const COMMAND = {
+  origin: { kind: 'composer' as const },
+  presentation: { isFullscreen: true, columns: 120 },
+}
+
 const SURFACES = ['terminal', 'desktop'] as const
 
 const prompt = (text: string, onScreen: { first: number; last: number; of: number } | null) => ({
@@ -20,9 +28,11 @@ const pane = (placement: 'dock' | 'inline', bodyColumns = placement === 'dock' ?
 })
 
 test('the terminal dock draws a tick per prompt, other seats draw the text, presses route', async ($, on) => {
+  mock.clock(on)
   const toasts: string[] = []
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
+    return { value: undefined }
   })
   // Stand in for the engine's own drawing of a prompt row.
   on('ui.render', { component: 'UserMessage' }, ($, e) => {
@@ -66,8 +76,8 @@ const drawPrompts = async ($: any, on: any) => {
   mock.store(on)
   on('config.set', ($: any, e: any) => ({ value: e.value }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('ui.close', () => ({}))
-  on('ui.toast', () => {})
+  on('ui.close', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
   await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'm1', props: prompt('first prompt', null) })
   await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'm2', props: prompt('second prompt', { first: 0, last: 3, of: 4 }) })
 }
@@ -82,7 +92,7 @@ test('a narrow vertical rail leaves the prompt text to hidden cards in the band'
 
 test('a wide vertical rail shows each prompt beside its tick and keeps the band empty', async ($, on) => {
   await drawPrompts($, on)
-  await $.command.run({ command: 'prompt-rail', args: 'vertical' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'vertical' })
   const rail = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'Pane', requestId: 'prompt-rail', props: pane('dock', 37) })
   expect((await rail.findAll({ type: 'Button' })).map(b => b.props.label)).toEqual([' ─ first prompt', ' ━ second prompt'])
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
@@ -97,8 +107,9 @@ test('wide characters are cut by the cells they take', async ($, on) => {
 })
 
 test('/prompt-rail horizontal draws a text line over one row of bars, heavy where being read', async ($, on) => {
+  mock.clock(on)
   await drawPrompts($, on)
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   // One bar per prompt, the one on screen heavy.
   expect((await band.findAll({ type: 'Button' })).map(b => b.props.label)).toEqual(['│', '┃'])
@@ -112,6 +123,11 @@ test('/prompt-rail horizontal draws a text line over one row of bars, heavy wher
 })
 
 test('with no prompt on screen the text line shows the newest one and no bar is heavy', async ($, on) => {
+  mock.clock(on)
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
   on('ui.render', { component: 'UserMessage' }, ($: any, e: any) => {
     const { Text } = $.ui.resolve(e)
     return <Text>{e.props.text}</Text>
@@ -119,11 +135,11 @@ test('with no prompt on screen the text line shows the newest one and no bar is 
   mock.store(on)
   on('config.set', ($: any, e: any) => ({ value: e.value }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('ui.close', () => ({}))
-  on('ui.toast', () => {})
+  on('ui.close', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
   await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'm1', props: prompt('first prompt', null) })
   await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'm2', props: prompt('second prompt', null) })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   // An empty line reads as a broken rail; the heavy bar still means "being read".
   expect(await band.find({ type: 'Text', text: /^#2 second prompt$/ })).toBeDefined()
@@ -141,7 +157,7 @@ test('the horizontal band rings its bars, starting on the one being read, and sh
   await drawPrompts($, on)
   const focus = (plugin: string, element: string) =>
     $.ui.focus({ component: 'AbovePrompt', requestId: 'above-prompt', plugin, element, origin: { kind: 'person' } })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   // The ring starts on the bar of the prompt being read.
   expect((await band.findAll({ type: 'Button' })).map(b => b.props.autoFocus)).toEqual([undefined, true])
@@ -165,7 +181,7 @@ const isDimLabel = (node: any, text: RegExp) => node.type === 'Text' && node.pro
 
 test('the desktop band reveals a hovered card on a line with nothing beneath it, and names the prompt being read beside the bars', async ($, on) => {
   await drawPrompts($, on)
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'desktop', component: 'AbovePrompt', props: BAND })
   const drawn = await band.findAll({})
   expect(drawn.filter((node: any) => node.props?.position === 'absolute')).toEqual([])
@@ -182,7 +198,7 @@ test('on the desktop a ringed bar paints no card over the line a hovered one rev
   mock.clock(on)
   on('ui.focus', () => ({}))
   await drawPrompts($, on)
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'desktop', component: 'AbovePrompt', props: BAND })
   await $.ui.focus({ component: 'AbovePrompt', requestId: 'above-prompt', plugin: 'prompt-rail', element: 'jump-0', origin: { kind: 'person' } })
   // The hidden card of the first prompt alone holds its text.
@@ -198,7 +214,7 @@ test('on the desktop the band keeps the focus ring off its bars, so a clicked ba
     return {}
   })
   await drawPrompts($, on)
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   await $.ui.mount({ plugin: 'prompt-rail', surface: 'desktop', component: 'AbovePrompt', props: BAND })
   const ringed = await $.ui.focus({ component: 'AbovePrompt', requestId: 'above-prompt', plugin: 'prompt-rail', element: 'jump-0', origin: { kind: 'person' } })
   expect(ringed.deny).toBeDefined()
@@ -211,7 +227,7 @@ test('on the desktop the bars leave room beside them for the prompt being read',
   for (let n = 3; n <= 25; n++) {
     await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: `m${n}`, props: prompt(`prompt number ${n}`, null) })
   }
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const bodyColumns = 30
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns } })
   const drawn = await band.findAll({})
@@ -219,6 +235,7 @@ test('on the desktop the bars leave room beside them for the prompt being read',
   const marks = drawn.filter((node: any) => node.type === 'Text' && (node.text === '‹' || node.text === '›' || node.text === ' ')).length
   const label = drawn.find((node: any) => isDimLabel(node, /^#2 /))
   expect(label).toBeDefined()
+  if (!label) throw new Error('The current prompt label is missing')
   // The bars, their marks, a gap and the label fit the band's width, inset aside.
   expect(bars + marks + 1 + [...String(label.text)].length).toBeLessThanOrEqual(bodyColumns - 2 - 2)
   expect(String(label.text)).toMatch(/^#2 second/)
@@ -241,7 +258,7 @@ test('the vertical pane keeps the focus ring off its rows, the engine\'s own sto
     return {}
   })
   await drawPrompts($, on)
-  await $.command.run({ command: 'prompt-rail', args: 'vertical' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'vertical' })
   // A ringed row beside the row under the pointer lights two rows at once;
   // a click still presses, and next and prev are the keyboard route.
   const ringed = await $.ui.focus({ component: 'Pane', requestId: 'prompt-rail', plugin: 'prompt-rail', element: 'jump-0', origin: { kind: 'person' } })
@@ -255,7 +272,7 @@ test('the vertical pane keeps the focus ring off its rows, the engine\'s own sto
 test('with several prompts on screen only the topmost one is heavy', async ($, on) => {
   await drawPrompts($, on)
   await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'm3', props: prompt('third prompt', { first: 0, last: 1, of: 2 }) })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   // m2 and m3 both show; m2 is the one being read.
   expect((await band.findAll({ type: 'Button' })).map(b => b.props.label)).toEqual(['│', '┃', '│'])
@@ -310,6 +327,7 @@ const COMPACTED = jsonl([
 // asked for a redraw of everything it hooks and of the rail alone, the
 // settings it wrote, and the panes it opened or closed.
 type Beneath = {
+  bandText?: string
   transcript: string
   mtimeMs: number
   reads: number
@@ -419,7 +437,10 @@ const world = (on: any, initial: Record<string, unknown> = {}, transcript = TRAN
   on('ui.render', { component: 'UserMessage' }, ($: any, e: any) => $.ui.resolve(e).Text({ children: e.props.text }))
   on('ui.render', { component: 'ToolUse' }, ($: any, e: any) => $.ui.resolve(e).Text({ children: e.props.tool }))
   on('ui.render', { component: 'AssistantMessage' }, ($: any, e: any) => $.ui.resolve(e).Text({ children: 'reply' }))
-  on('ui.render', { component: 'AbovePrompt' }, ($: any, e: any) => $.ui.resolve(e).Box({}))
+  on('ui.render', { component: 'AbovePrompt' }, ($: any, e: any) => {
+    const { Box, Text } = $.ui.resolve(e)
+    return disk.bandText === undefined ? Box({}) : Text({ children: disk.bandText })
+  })
   return store
 }
 
@@ -458,7 +479,7 @@ test('a transcript over 4 MiB is listed in its order, with turn details, without
   expect(await railLabels($)).toEqual(['first', '二番目のプロンプト'])
   expect(disk.reads).toBe(0)
   expect(disk.spawns).toEqual([['tail', '-c', '+1', '/t/s1.jsonl']])
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   await drawRow($, 'p1', 'first', { first: 0, last: 1, of: 2 })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect(await band.find({ type: 'Text', text: /^#1 first · 20s · 1 tool\s*$/ })).toBeDefined()
@@ -546,7 +567,7 @@ test('a reload lists the prompts again from the remembered transcript', async ($
   // A reloaded module has no list; session.start fires again and rebuilds it.
   world(on, { 'transcript:s1': { path: '/t/s1.jsonl', at: 1 } })
   await $.session.start({ cwd: '/t', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect((await band.findAll({ type: 'Button' })).length).toBe(4)
 })
@@ -635,7 +656,7 @@ test('a prompt drawn under an id derived from its stored uuid is listed once, re
 test('a prompt row on screen under a derived id places the reader under that prompt', async ($, on) => {
   world(on, {}, SPLIT)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   await drawSplit($, 'UserMessage', SPLIT_IDS.firstRow, { first: 0, last: 1, of: 2 })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect((await band.findAll({ type: 'Button' })).map(b => b.props.label)).toEqual(['┃', '│'])
@@ -644,7 +665,7 @@ test('a prompt row on screen under a derived id places the reader under that pro
 test('a reply row on screen under a derived id places the reader under its prompt', async ($, on) => {
   world(on, {}, SPLIT)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   await drawSplit($, 'AssistantMessage', SPLIT_IDS.replyRow, { first: 0, last: 1, of: 2 })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect((await band.findAll({ type: 'Button' })).map(b => b.props.label)).toEqual(['┃', '│'])
@@ -776,7 +797,7 @@ test('a prompt sent from Remote Control at rest is listed once', async ($, on) =
 
 test('a prompt delivered into the running turn is listed once and read on its own row', async ($, on) => {
   queueWorld(on)
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   await sendFirst($, 'first', 's1')
   await drawRow($, 'q1', 'mid')
   await submit($, 'mid')
@@ -800,7 +821,7 @@ const deliver = async ($: any, text: string, ids: [string, string, string]) => {
 
 test('a turn keeps its details when a prompt with its text is delivered into it', async ($, on) => {
   queueWorld(on)
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   await sendFirst($, 'continue', 's1')
   await deliver($, 'continue', ['q1', 'q2', 'a1'])
   await $.turn.complete({ answer: 'done', durationMs: 12500, isAborted: true, turnId: 't-s1', reason: 'aborted' })
@@ -839,7 +860,7 @@ const DELIVERED = [
 test('a prompt delivered into a turn is listed from the transcript, the turn staying with its first prompt', async ($, on) => {
   queueWorld(on, jsonl(DELIVERED))
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   expect(await railLabels($)).toEqual(['first', 'mid'])
   await drawRow($, 's1', 'first', { first: 0, last: 1, of: 2 })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
@@ -861,7 +882,7 @@ test('a delivered prompt drawn before the transcript is read is listed once afte
 
 test('what the engine reported of a turn goes to the prompt that started it, not one delivered into it', async ($, on) => {
   queueWorld(on)
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   await sendFirst($, 'first', 's1')
   await drawRow($, 'q1', 'mid')
   await submit($, 'mid')
@@ -875,7 +896,7 @@ test('what the engine reported of a turn goes to the prompt that started it, not
 test('a tool row at the top of the viewport places the reader under its prompt', async ($, on) => {
   world(on)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   await $.ui.mount({
     plugin: 'prompt-rail',
     surface: 'terminal',
@@ -918,7 +939,7 @@ test("while a subagent's transcript is in view the pane holds a note, not the ra
 
 test("while a subagent's transcript is in view the band stays empty", async ($, on) => {
   await drawPrompts($, on)
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, view: { agentId: 'ag1' } } })
   expect(await band.findAll({ type: 'Button' })).toEqual([])
 })
@@ -928,7 +949,7 @@ test("while a subagent's transcript is in view the band stays empty", async ($, 
 const overflowBand = async ($: any, on: any, reading: number) => {
   world(on)
   await $.session.start({ cwd: '/t', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   for (let i = 0; i < 12; i++) {
     const onScreen = i === reading ? { first: 0, last: 1, of: 2 } : null
     await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: `p${i}`, props: prompt(`prompt ${i}`, onScreen) })
@@ -1025,7 +1046,7 @@ test('a scroll redraws the rail only when the prompt being read changes, and nev
   world(on, {}, TRANSCRIPT, disk)
   const clock = mock.clock(on)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const shown = { first: 0, last: 1, of: 2 }
   const u1 = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'u1', props: prompt('first stored prompt', shown) })
   const u2 = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'u2', props: prompt('<div> why does this overflow?', shown) })
@@ -1055,12 +1076,12 @@ test('/prompt-rail <mode> writes the mode setting and switches at once', async (
   world(on, {}, TRANSCRIPT, disk)
   await $.session.start({ cwd: '/t', surface: 'terminal', isInteractive: true })
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   expect(disk.settings.get('prompt-rail.mode')).toBe('horizontal')
   expect(disk.panes.at(-1)).toBe('close prompt-rail')
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect((await band.findAll({ type: 'Button' })).length).toBe(4)
-  await $.command.run({ command: 'prompt-rail', args: 'vertical' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'vertical' })
   expect(disk.settings.get('prompt-rail.mode')).toBe('vertical')
   expect(disk.panes.at(-1)).toBe('open prompt-rail')
 })
@@ -1068,6 +1089,11 @@ test('/prompt-rail <mode> writes the mode setting and switches at once', async (
 // A session with no /config row for the plugin's fields (the desktop app's
 // SDK sessions) makes $.config.set throw rather than deny.
 test('/prompt-rail <mode> still switches when the setting has no /config row', async ($, on) => {
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  mock.clock(on)
   const toasts: string[] = []
   on('ui.render', { component: 'UserMessage' }, ($: any, e: any) => {
     const { Text } = $.ui.resolve(e)
@@ -1079,12 +1105,13 @@ test('/prompt-rail <mode> still switches when the setting has no /config row', a
     throw new Error('$.config.set: no /config row with key prompt-rail.mode ($.config.list names them)')
   })
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('ui.close', () => ({}))
+  on('ui.close', () => ({ value: undefined }))
   on('ui.toast', ($: any, e: any) => {
     toasts.push(e.text)
+    return { value: undefined }
   })
   await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'm1', props: prompt('first prompt', { first: 0, last: 1, of: 2 }) })
-  const answer = await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  const answer = await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   expect(answer).toBeDefined()
   // The mode applies to this session even though it could not be kept.
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
@@ -1116,8 +1143,8 @@ test('a mode the setting cannot keep is kept for the session', async ($, on) => 
   })
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.close', () => ({ value: undefined }))
-  on('ui.toast', () => {})
-  await $.command.run({ command: 'prompt-rail', args: 'off' })
+  on('ui.toast', () => ({ value: undefined }))
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'off' })
   expect(store.get('session-mode:s1')).toBe('off')
 })
 
@@ -1147,7 +1174,7 @@ test('/prompt-rail off hides the rail until a mode turns it back on', async ($, 
   world(on, {}, TRANSCRIPT, disk)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
   await $.session.start({ cwd: '/t', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'prompt-rail', args: 'off' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'off' })
   expect(disk.settings.get('prompt-rail.mode')).toBe('off')
   expect(disk.panes.at(-1)).toBe('close prompt-rail')
   // No pane and no band.
@@ -1155,10 +1182,10 @@ test('/prompt-rail off hides the rail until a mode turns it back on', async ($, 
   expect(await band.findAll({ type: 'Button' })).toEqual([])
   // Bare /prompt-rail says how to turn it on instead of opening anything.
   const panes = disk.panes.length
-  await $.command.run({ command: 'prompt-rail', args: '' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: '' })
   expect(disk.panes.length).toBe(panes)
   expect(disk.toasts.at(-1)).toMatch(/off/)
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   expect(disk.settings.get('prompt-rail.mode')).toBe('horizontal')
   await band.unmount()
   const onBand = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
@@ -1171,7 +1198,7 @@ test('a session starts with no rail while the setting is off', async ($, on) => 
   const disk = beneath()
   world(on, {}, TRANSCRIPT, disk)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'off' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'off' })
   disk.panes.length = 0
   await $.session.start({ cwd: '/t', surface: 'terminal', isInteractive: true })
   expect(disk.panes).toEqual(['close prompt-rail'])
@@ -1202,8 +1229,8 @@ test('/prompt-rail runs mid-turn and takes next and prev', async ($, on) => {
     expect.objectContaining({ name: 'prompt-rail-prev', immediate: true }),
   ])
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'next' })
-  await $.command.run({ command: 'prompt-rail', args: 'prev' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'next' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'prev' })
   // Neither is taken for a bad argument, and neither changes the mode.
   expect(disk.toasts.filter(text => text.includes('/prompt-rail ['))).toEqual([])
   expect(disk.settings.size).toBe(0)
@@ -1275,7 +1302,7 @@ test('a turn is summed up as its duration, tool calls and edited files', () => {
 test('the hover card in the horizontal rail carries the turn\'s details', async ($, on) => {
   world(on, {}, TURNS)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect(await band.find({ type: 'Text', text: /^#1 first · 1m 23s · 4 tools · app\.ts, README\.md\s*$/ })).toBeDefined()
   // No turn_duration row: the time from the prompt to the turn's last row.
@@ -1288,7 +1315,7 @@ test('a narrow band keeps room for the details by cutting the prompt first', asy
     { type: 'system', uuid: 'd1', subtype: 'turn_duration', durationMs: 9000 },
   ]))
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 40 } })
   // Thirty-six cells: `#1 `, the text cut to 28, then ` · 9s`.
   const card = await band.find({ type: 'Text', text: /^#1 a prompt far too long to fi… · 9s\s*$/ })
@@ -1299,7 +1326,7 @@ test('a narrow band keeps room for the details by cutting the prompt first', asy
 test('the hover card of a narrow vertical rail carries the turn\'s details', async ($, on) => {
   world(on, {}, TURNS)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'vertical' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'vertical' })
   await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'Pane', requestId: 'prompt-rail', props: pane('dock', 4) })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect(await band.find({ type: 'Text', text: /^first · 1m 23s · 4 tools · app\.ts, README\.md$/ })).toBeDefined()
@@ -1328,10 +1355,10 @@ test('nothing the rail learns draws the transcript rows again', async ($, on) =>
   const clock = mock.clock(on)
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
   on('turn.complete', ($: any, e: any) => ({ text: e.answer }))
-  on('ui.scroll', () => ({ value: { deny: NOT_DRAWN } }))
+  on('ui.scroll', () => ({ deny: NOT_DRAWN }))
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
   await $.session.start({ cwd: '/t', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'prompt-rail', args: 'vertical' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'vertical' })
   // A new prompt is drawn, its turn runs and ends, and the transcript has it.
   await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'u2', props: prompt('second', null) })
   await $.turn.start({ text: 'second', turnId: 't1' })
@@ -1354,7 +1381,7 @@ test('a turn that just ended shows the duration the engine reported before the t
   world(on, {}, TURNS)
   on('turn.complete', ($: any, e: any) => ({ text: e.answer }))
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   // A subagent's turn is not the prompt's.
   await $.turn.complete({ answer: '', durationMs: 99000, isAborted: false, turnId: 'sub', agentId: 'ag1', reason: 'answer' })
   await $.turn.complete({ answer: 'done', durationMs: 12500, isAborted: false, turnId: 'main', reason: 'answer' })
@@ -1369,7 +1396,7 @@ test('what the engine reported of a turn stays with its prompt once the stored r
   world(on, {}, disk.transcript, disk)
   on('turn.complete', ($: any, e: any) => ({ text: e.answer }))
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   await drawSplit($, 'UserMessage', SPLIT_IDS.firstRow, null)
   await $.turn.complete({ answer: 'done', durationMs: 12500, isAborted: true, turnId: 'main', reason: 'aborted' })
   disk.transcript = jsonl([{ type: 'user', uuid: SPLIT_IDS.first, message: { role: 'user', content: 'first' } }])
@@ -1384,7 +1411,7 @@ test('next and prev wait while a subagent transcript is in view', async ($, on) 
   world(on, {}, TRANSCRIPT, disk)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
   const sub = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'Pane', requestId: 'prompt-rail', props: { ...pane('dock', 40), view: { agentId: 'ag1' } } })
-  await $.command.run({ command: 'prompt-rail', args: 'next' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'next' })
   // No jump is tried there, so no refusal can dot a main-conversation prompt.
   // The engine names the plugin ahead of each toast.
   expect(disk.toasts).toEqual(['jumps move through the main conversation; switch back to it first'])
@@ -1392,7 +1419,7 @@ test('next and prev wait while a subagent transcript is in view', async ($, on) 
   expect((await railLabels($)).length).toBe(4)
   const main = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   await main.unmount()
-  await $.command.run({ command: 'prompt-rail', args: 'prev' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'prev' })
   expect(disk.toasts.filter(text => text.includes('switch back'))).toHaveLength(1)
 })
 
@@ -1425,7 +1452,7 @@ test('files that share a name are told apart by their folder', async ($, on) => 
     },
   ]))
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect(await band.find({ type: 'Text', text: /^#1 first · 3 tools · web\/index\.ts, api\/index\.ts\s*$/ })).toBeDefined()
 })
@@ -1454,7 +1481,7 @@ test('a long turn summary keeps its end in the card', async ($, on) => {
     { type: 'system', uuid: 'd1', subtype: 'turn_duration', durationMs: 9000 },
   ]))
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 50 } })
   // Forty-six cells: the file count stays whole at the end.
   const card = await band.find({ type: 'Text', text: /· 9s · 2 tools · 2 files\s*$/ })
@@ -1505,19 +1532,19 @@ test('a turn is summed up with how it ended', () => {
 test('no rail draws a colored mark; how a turn went is left to its card', async ($, on) => {
   world(on, {}, OUTCOMES)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'vertical' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'vertical' })
   for (const [surface, placement] of [['terminal', 'dock'], ['desktop', 'inline']] as const) {
     const site = await $.ui.mount({ plugin: 'prompt-rail', surface, component: 'Pane', requestId: 'prompt-rail', props: pane(placement, 40) })
     expect(await site.findAll({ type: 'Text' })).toEqual([])
     await site.unmount()
   }
   expect(await cardDetails($)).toEqual(['first · interrupted', 'second · API error', 'third · 1 tool · a.ts', 'fourth'])
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   const texts = await band.findAll({ type: 'Text' })
   expect(texts.filter((t: any) => t.props.color !== undefined || ['×', '•'].includes(t.text))).toEqual([])
   await band.unmount()
-  await $.command.run({ command: 'prompt-rail', args: 'vertical' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'vertical' })
   expect(await railLabels($)).toEqual(['first', 'second', 'third', 'fourth'])
 })
 
@@ -1526,7 +1553,7 @@ test('the running turn\'s card says so until it ends, then how it ended', async 
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
   on('turn.complete', ($: any, e: any) => ({ text: e.answer }))
   await $.classic.SessionStart({ source: 'startup', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'vertical' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'vertical' })
   // The prompt's row is stored and drawn, then its turn starts.
   const row = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'u1', props: prompt('first', null) })
   await row.unmount()
@@ -1544,8 +1571,8 @@ test('the rail never pins a status line', async ($, on) => {
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
   await $.session.start({ cwd: '/t', surface: 'terminal', isInteractive: true })
   await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'u3', props: prompt('continue', { first: 0, last: 1, of: 2 }) })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
-  await $.command.run({ command: 'prompt-rail', args: 'vertical' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'vertical' })
   await $.classic.Stop({ session_id: 's1', transcript_path: '/t/s1.jsonl', stop_hook_active: false })
   expect(disk.status).toEqual([])
 })
@@ -1553,7 +1580,7 @@ test('the rail never pins a status line', async ($, on) => {
 test('a reply the transcript read has not seen yet counts as the newest prompt\'s', async ($, on) => {
   world(on)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   // The Stop hook read the file before the turn's last reply was written, so
   // the index does not know this row; only the newest turn can own it.
   await $.ui.mount({
@@ -1561,7 +1588,7 @@ test('a reply the transcript read has not seen yet counts as the newest prompt\'
     surface: 'terminal',
     component: 'AssistantMessage',
     requestId: 'late-reply',
-    props: { text: 'done', onScreen: { first: 0, last: 1, of: 2 } },
+    props: { text: 'done', isFirstOfReply: true, onScreen: { first: 0, last: 1, of: 2 } },
   })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect(await band.find({ type: 'Text', text: /^#4 continue$/ })).toBeDefined()
@@ -1570,7 +1597,7 @@ test('a reply the transcript read has not seen yet counts as the newest prompt\'
 test('a prompt still drawn under its provisional id places no one', async ($, on) => {
   world(on)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'u1', props: prompt('first stored prompt', { first: 0, last: 1, of: 2 }) })
   await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'placeholder', props: prompt('fifth', { first: 0, last: 1, of: 2 }) })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
@@ -1582,7 +1609,7 @@ test('a new prompt\'s turn runs under that prompt, not the one before it', async
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
   on('turn.complete', ($: any, e: any) => ({ text: e.answer }))
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'vertical' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'vertical' })
   // The turn for "second" starts before its row is stored under its uuid.
   await $.turn.start({ text: 'second', turnId: 't2' })
   expect(await cardDetails($)).toEqual(['first'])
@@ -1599,7 +1626,7 @@ test('a repeated prompt\'s turn does not run under the earlier one with the same
   world(on)
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'vertical' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'vertical' })
   // The transcript ends in "continue"; the person sends "continue" again.
   await $.turn.start({ text: 'continue', turnId: 't5' })
   const isRunning = async () => (await cardDetails($)).map((details: string) => details.endsWith('running'))
@@ -1614,14 +1641,14 @@ test('a late reply of the turn before stays with its prompt once a new one is se
   world(on, {}, TRANSCRIPT, disk)
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   // The last reply of u4's turn was stored after the Stop hook read the file.
   disk.transcript = `${TRANSCRIPT}\n${JSON.stringify({ type: 'assistant', uuid: 'late', parentUuid: 'u4', message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] } })}`
   disk.mtimeMs = 2
   await $.turn.start({ text: 'fifth', turnId: 't5' })
   const row = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'u5', props: prompt('fifth', null) })
   await row.unmount()
-  await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AssistantMessage', requestId: 'late', props: { text: 'done', onScreen: { first: 0, last: 1, of: 2 } } })
+  await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AssistantMessage', requestId: 'late', props: { text: 'done', isFirstOfReply: true, onScreen: { first: 0, last: 1, of: 2 } } })
   const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect(await band.find({ type: 'Text', text: /^#4 continue$/ })).toBeDefined()
 })
@@ -1648,7 +1675,7 @@ const runFifth = async ($: any, on: any) => {
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
   const clock = mock.clock(on)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   await $.turn.start({ text: 'fifth', turnId: 't5' })
   const u5 = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'UserMessage', requestId: 'u5', props: prompt('fifth', null) })
   await u5.unmount()
@@ -1700,8 +1727,25 @@ const horizontalWorld = async ($: any, on: any, transcript = TRANSCRIPT) => {
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }))
   const clock = mock.clock(on)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: '/t/s1.jsonl' })
-  await $.command.run({ command: 'prompt-rail', args: 'horizontal' })
+  await $.command.run({ ...COMMAND, command: 'prompt-rail', args: 'horizontal' })
   return { disk, clock }
+}
+
+for (const mode of ['horizontal', 'vertical', 'off']) {
+  test(`the ${mode} rail preserves another plugin's prompt band`, async ($, on) => {
+    const { disk, clock } = await horizontalWorld($, on)
+    disk.bandText = 'Other plugin content'
+    await $.command.run({ ...COMMAND, command: 'prompt-rail', args: mode })
+    if (mode === 'vertical') {
+      await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'Pane', requestId: 'prompt-rail', props: pane('dock', 4) })
+    }
+    const band = await $.ui.mount({ plugin: 'prompt-rail', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+    await clock.advance(200)
+    expect(await band.find({ type: 'Text', text: 'Other plugin content' })).toBeDefined()
+    await band.redraw({ ...BAND, hasSurvey: true })
+    expect(await band.find({ type: 'Text', text: 'Other plugin content' })).toBeDefined()
+    expect(await band.findAll({ type: 'Button' })).toHaveLength(0)
+  })
 }
 
 test('a row cut at the viewport top places the reader there, over rows that left untold', async ($, on) => {

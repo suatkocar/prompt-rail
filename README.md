@@ -13,6 +13,10 @@ A rail of your prompts for Claude Code. Hover to read one, click to jump back to
 
 </div>
 
+## Personal fork
+
+Based on [oikon48/prompt-rail](https://github.com/oikon48/prompt-rail). Version 0.7.2 preserves observed viewport rows across jumps and composes the prompt band with other mods instead of replacing it. Inbox also needs its shared-band compatibility fix; [validation and upstream notes](docs/validation.md) record the tested combination.
+
 ## Quick start
 
 1. Turn on function hooks (early access, Claude Code 2.1.280+) in `~/.claude/settings.json`:
@@ -24,13 +28,13 @@ A rail of your prompts for Claude Code. Hover to read one, click to jump back to
 2. Install, from your shell or inside a session:
 
    ```bash
-   claude plugin marketplace add oikon48/prompt-rail
-   claude plugin install prompt-rail@oikon48
+   claude plugin marketplace add suatkocar/prompt-rail
+   claude plugin install prompt-rail@suatkocar-prompt-rail
    ```
 
    ```
-   /plugin marketplace add oikon48/prompt-rail
-   /plugin install prompt-rail@oikon48
+   /plugin marketplace add suatkocar/prompt-rail
+   /plugin install prompt-rail@suatkocar-prompt-rail
    ```
 
 3. Start a new session. The rail opens on its own.
@@ -120,11 +124,23 @@ The rail lists the prompts of the live branch, so prompts abandoned with `/rewin
 
 ```bash
 claude --plugin-dir plugins/prompt-rail        # load this checkout; saving reloads it
-claude plugin validate plugins/prompt-rail
-claude plugin test plugins/prompt-rail
+npm ci
+npm run check
 ```
 
-Run `/plugin-types .claude/types` in a session here for type declarations. Bump the version in `plugins/prompt-rail/.claude-plugin/plugin.json` with each release, since installed copies update only when it changes.
+An interactive session loading this checkout generates the SDK declarations in `plugins/prompt-rail/.claude-plugin/types/`. The root TypeScript configuration extends that generated configuration; the declarations stay untracked. The check script can copy them from the canonical checkout when running in a worktree. It fails explicitly if they are missing.
+
+`npm run check` validates the marketplace and plugin, type-checks the hook and test code, runs the Claude Code test suite, tests jump routing against real hooks with deterministic engine boundaries, and reads actual synthetic large transcript files through `tail`. The latter requires macOS or Linux.
+
+To exercise the actual Inbox and Image View modules in all six load orders:
+
+```sh
+INBOX_DIR=/path/to/inbox IMAGE_VIEW_DIR=/path/to/claude-image-view npm run test:integration
+```
+
+This check uses synthetic state and no model calls, personal transcripts or real application actions. It verifies hook composition and action routing, not terminal painting or physical mouse hit testing. A combined band taller than Claude Code's `maxRows` uses the host's built-in scroll window, including when an image preview is expanded.
+
+Keep `origin` on the personal fork and `upstream` on the original repository. Fetch and review upstream changes and issues before merging; do not replace the working fork blindly. Bump the plugin version for each release so installed cache copies can update.
 
 ## License
 

@@ -29,9 +29,27 @@ jobs:
       # dist-tag can trail.
       - run: npm install -g @anthropic-ai/claude-code@latest
       - run: claude --version
+      - run: npm ci
       - name: Validate the marketplace
         run: claude plugin validate .
       - name: Validate the plugin
         run: claude plugin validate plugins/prompt-rail
       - name: Test the plugin
-        run: claude plugin test plugins/prompt-rail
+        run: npm test
+      - name: Test navigation against the actual hook module
+        run: npm run test:navigation
+      - name: Test real large transcript files and reader processes
+        run: npm run test:transcripts
+      - uses: actions/checkout@v6
+        with:
+          repository: suatkocar/inbox
+          path: .integration/inbox
+      - uses: actions/checkout@v6
+        with:
+          repository: suatkocar/claude-image-view
+          path: .integration/image-view
+      - name: Test shared prompt-band integration
+        env:
+          INBOX_DIR: .integration/inbox
+          IMAGE_VIEW_DIR: .integration/image-view
+        run: npm run test:integration

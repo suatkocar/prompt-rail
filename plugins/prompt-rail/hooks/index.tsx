@@ -1,4 +1,4 @@
-import type { EngineInterface, Register, Timer } from 'claude-code'
+import type { EngineInterface, Register, RenderElement, Timer } from 'claude-code'
 
 const PANE = 'prompt-rail'
 // Rows the person typed (terminal composer, desktop/remote bridge, SDK host).
@@ -945,13 +945,11 @@ export const register: Register = (on, options) => {
   // Whether the rail's drawing no longer shows the prompt being read.
   const isDrawnStale = () => currentIndex() !== drawnCurrent
 
-  // After a jump lands, the rows before it left and the prompt jumped to is
-  // at the top, though rows may not say so: a row that stays whole is silent,
-  // and one that unmounts may never report it left.
-  const landOn = (id: string, target: string, index: number) => {
-    onScreen.clear()
-    const name = `UserMessage\u0000${target}`
-    onScreen.set(name, { name, key: rowKey(target), first: 0, order: ++reports })
+  // A jump highlights its target without replacing real viewport reports.
+  // Whole rows may remain visible (especially near the end) without reporting
+  // again. A synthetic target row would outlive the jump and hide those rows
+  // when the next turn resumes viewport tracking.
+  const landOn = (id: string, index: number) => {
     reading = rowKey(id)
     const jump = { key: rowKey(id), shown: new Set([index]), isSettled: false }
     landed = jump
@@ -1070,7 +1068,7 @@ export const register: Register = (on, options) => {
       const entry = entries[index]
       const target = entry && drawnRow(drawn, entry.id)
       if (entry && target && (await jumpTo($, entry.id, target, unreachable, notices))) {
-        const jump = landOn(entry.id, target, index)
+        const jump = landOn(entry.id, index)
         $.clock.after(SETTLE_MAX_MS, () => {
           jump.isSettled = true
         })
@@ -1363,6 +1361,8 @@ export const register: Register = (on, options) => {
     // Nothing while the rail is off, a survey holds the band or a subagent's transcript is in view.
     if (mode === 'off' || e.props.hasSurvey || e.props.view.agentId !== undefined || entries.length === 0) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
+    const below = await next(e)
+    const together = (rail: RenderElement) => <Box flexDirection="column">{below}{rail}</Box>
     const cards = (width: number) =>
       entries.map((entry, i) => (
         <Box key={`card-${i}`} display="none" hover={{ scope: `prompt-rail-${i}`, display: 'flex' }}>
@@ -1428,7 +1428,7 @@ export const register: Register = (on, options) => {
       if (!isCellGrid) {
         // Each bar and mark a cell wide, then a gap.
         const room = width - (isOverflowing ? barCells : entries.length) - 1
-        return (
+        return together(
           <Box flexDirection="column" paddingLeft={RAIL_INSET}>
             <Box height={1} width={width}>
               {entries.map((_, i) => (
@@ -1447,7 +1447,7 @@ export const register: Register = (on, options) => {
           </Box>
         )
       }
-      return (
+      return together(
         <Box flexDirection="column" paddingLeft={RAIL_INSET}>
           <Box height={1} width={width}>
             {/* With no prompt known on screen, the newest: an empty line reads as a broken rail. */}
@@ -1464,9 +1464,9 @@ export const register: Register = (on, options) => {
     }
 
     if (railColumns > 0 && railColumns < INLINE_REVEAL_MIN_COLUMNS) {
-      return <Box flexDirection="column">{cards(Math.max(8, e.props.bodyColumns - 8))}</Box>
+      return together(<Box flexDirection="column">{cards(Math.max(8, e.props.bodyColumns - 8))}</Box>)
     }
-    return next(e)
+    return below
   })
 
   // The band holds the keyboard after a click or ctrl+x tab: the ring starts
@@ -1506,7 +1506,7 @@ export const register: Register = (on, options) => {
     const entry = entries[index]
     const target = entry && drawnRow(drawn, entry.id)
     if (entry && target && (await jumpTo($, entry.id, target, unreachable, notices))) {
-      const jump = landOn(entry.id, target, index)
+      const jump = landOn(entry.id, index)
       $.clock.after(SETTLE_MAX_MS, () => {
         jump.isSettled = true
       })

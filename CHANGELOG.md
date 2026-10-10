@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.2 (personal fork)
+
+- Preserve real viewport reports when jumping so a new turn can track rows that stayed visible without reporting again.
+- Compose the prompt band with other mods, including the compatible Inbox fork and Image View.
+- Repair the test host fixtures, type-check against the generated SDK, and add navigation, real large-transcript and six-order integration checks.
+- Publish through the personal `suatkocar-prompt-rail` marketplace while retaining upstream authorship and license.
+
 ## 0.7.1
 
 - Fixed the horizontal rail in the Claude desktop app drawing a hovered prompt's card over the dim line of the prompt being read, so both texts showed at once; there the line above the bars now shows the hovered card alone, and the prompt being read is named beside the bars, with room kept for it however many bars there are

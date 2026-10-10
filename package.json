@@ -1,0 +1,17 @@
+{
+  "name": "prompt-rail-development",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "claude plugin test plugins/prompt-rail",
+    "test:navigation": "node --test scripts/navigation.test.mjs",
+    "test:transcripts": "node --test scripts/transcripts.test.mjs",
+    "test:integration": "node --test scripts/integration.test.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check": "sh scripts/check.sh"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,12 +1,12 @@
 {
   "name": "prompt-rail",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "A rail of your session's prompts beside the transcript or above the prompt; hover to read one, click to jump to it.",
   "author": {
     "name": "oikon48"
   },
-  "homepage": "https://github.com/oikon48/prompt-rail",
-  "repository": "https://github.com/oikon48/prompt-rail",
+  "homepage": "https://github.com/suatkocar/prompt-rail",
+  "repository": "https://github.com/suatkocar/prompt-rail",
   "license": "MIT",
   "keywords": [
     "navigation",
