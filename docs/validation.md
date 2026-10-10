@@ -20,6 +20,7 @@ Date: 2026-10-10. Local environment: macOS arm64, Claude Code 2.1.296.
 | Three actual hook modules, all six registration orders | 6 passed: startup, idle/working/survey/stop/return/empty states, mode changes, jump target, image expansion/close/open/remove |
 | Actual synthetic transcript through a real `tail` child | Passed initial reading, incremental appends, incomplete lines, Unicode, unchanged-file reuse, larger replacement, truncation, retries and process termination |
 | Inbox `./scripts/check.sh` | Formatting, manifest, types, Claude tests, Codex bundles/types/tests passed |
+| [GitHub Actions on Ubuntu / Node 22](https://github.com/suatkocar/prompt-rail/actions/runs/38013860645) | Passed with Claude Code 2.1.296: validation, 113 plugin tests, 5 navigation tests, real transcript reading and 6 integration orders |
 
 The measured transcript was **67,422,799 bytes**, with 1,024 prompts and bulky tool/image records. One local run took **2,006 ms** for the initial read and **7 ms** for the next append. These are single-run fixture measurements, not general performance guarantees. The retained prompt labels occupied 52,053 serialized characters; this is not a process-memory measurement. The assertions separately verify that retained rows omit bulky tool/image payloads.
 
@@ -34,6 +35,16 @@ Reviewed baseline: upstream `2ac50fb87fc426fed89ba0f09f1784ef6f289ae8` (0.7.1).
 - There were no open upstream pull requests at the initial review. Fetch and review later changes before merging them into this fork.
 
 Keep `origin` on the personal fork and `upstream` on the original repository. The CI workflow rechecks navigation, actual transcript reading and composition against the current Inbox and Image View forks. Local type checking additionally uses the declarations emitted by the installed Claude Code build.
+
+## Installation verification
+
+Version 0.7.2 was installed and enabled at user scope from the local directory marketplace, with `mode=horizontal`. `claude plugin list --json` resolved `readFromFolder` to the canonical checkout's `plugins/prompt-rail` directory. Its installed hook hash matched the tested checkout.
+
+The compatible Inbox commit is `be0e0e09051183ca79e0f29fe028f7813aba777d`; its installed copy was updated and matched the canonical hook hash. Image View remained at `f913d484195f997472ba018a3fcde20b5b9dfc45` (0.3.1). Both changed repositories were pushed to their personal forks and their remote main commits matched locally.
+
+Activation metadata was backed up before the CLI commands. A semantic comparison found only the new Prompt Rail marketplace, enabled entry and mode option, plus the new Prompt Rail and updated Inbox install records. Unrelated settings were unchanged. The previous trial path remains a compatibility symlink, and its pre-existing local TypeScript configuration retained the same SHA-256.
+
+The CLI reports that existing sessions need a restart to apply the Inbox update. Fresh sessions use the globally enabled plugins without an extra `--plugin-dir` argument.
 
 ## Limits
 

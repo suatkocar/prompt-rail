@@ -22,8 +22,8 @@
 - [x] Reproduce the four existing test harness failures; make void hooks return valid results and mock required timers without changing product behavior.
 - [x] Add failing tests for a jump followed by a new turn, unchanged whole rows, a departing target and subsequent viewport movement. Remove synthetic viewport state, retain actual reports and verify the full suite.
 - [x] Add failing composition tests for horizontal/vertical/off/survey rendering, preserving another plugin's content and press routing. Compose Prompt Rail and Inbox with downstream trees, then run each repository's required checks.
-- [x] Add an isolated integration fixture using the real Prompt Rail, Inbox and Image View hooks in both load orders; exercise image controls and a prompt jump without a model call.
+- [x] Add an isolated integration fixture using the real Prompt Rail, Inbox and Image View hooks in all six load orders; exercise image controls and a prompt jump without a model call.
 - [x] Run real-file transcript checks for large initial reads, incremental appends, Unicode boundaries, incomplete records, rewrites and retries. Record measured size/timing and distinguish them from live terminal rendering.
-- [ ] Update fork metadata, version, development checks and validation documentation. Review diffs, run final checks and commit the verified changes.
-- [ ] Merge and push the verified commits to the user's forks; register the local marketplace and globally enable Prompt Rail. Update Inbox's installed source as needed and verify effective paths plus unchanged unrelated settings.
-- [ ] Report the installed version, fork/path, checks and any remaining physical UI verification limit.
+- [x] Update fork metadata, version, development checks and validation documentation. Review diffs, run final checks and commit the verified changes.
+- [x] Merge and push the verified commits to the user's forks; register the local marketplace and globally enable Prompt Rail. Update Inbox's installed source as needed and verify effective paths plus unchanged unrelated settings.
+- [x] Record the installed version, fork/path, checks and remaining physical UI verification limit for the final report.
