@@ -5,6 +5,7 @@
   "scripts": {
     "test": "claude plugin test plugins/prompt-rail",
     "test:navigation": "node --test scripts/navigation.test.mjs",
+    "test:archive": "node --test scripts/archive.test.mjs",
     "test:transcripts": "node --test scripts/transcripts.test.mjs",
     "test:integration": "node --test scripts/integration.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",

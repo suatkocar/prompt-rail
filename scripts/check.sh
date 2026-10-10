@@ -19,6 +19,7 @@ claude plugin validate plugins/prompt-rail --strict
 npm run typecheck
 npm test
 npm run test:navigation
+npm run test:archive
 npm run test:transcripts
 if [ -n "${INBOX_DIR:-}" ] && [ -n "${IMAGE_VIEW_DIR:-}" ]; then
     npm run test:integration

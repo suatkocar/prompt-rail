@@ -2,6 +2,70 @@
 
 Date: 2026-10-10. Local environment: macOS arm64, Claude Code 2.1.296.
 
+## Version 0.7.3: missing-row archive fallback
+
+Explicit prompt clicks and direct jump commands first try the native scroll.
+Only the host's `nothing drawn` refusal activates a read-only AgentsView lookup.
+Next/previous stepping stays terminal-only. A lookup cannot change the reading
+marker, and a newer navigation or session clear cancels stale completions.
+
+The exact session is validated before matching a source UUID or timestamp plus
+full text. Missing timestamps can use full text unique in both indexes, with a
+32-character minimum. Ambiguous messages, known timestamp conflicts, foreign
+session URLs, changed revisions, truncated output and unavailable tools fail
+without opening a guessed destination. Chrome is opened with an argument vector,
+not a shell. The fallback can be disabled in `/config`.
+
+Observed checks for this release:
+
+| Check | Result |
+| --- | --- |
+| Strict plugin and marketplace validation | Passed; process calls remain visible to the hook validator through a local adapter |
+| Generated SDK TypeScript check | Passed |
+| Official Claude Code plugin tests | 113 passed |
+| Navigation through the actual compiled hooks | 16 passed, including fallback, native success, disabled fallback, terminal-only stepping, repeated clicks and stale completions |
+| Archive resolver tests | 30 passed, including legacy identities, timestamp retention, ordinal gaps, URL checks, deadlines and failures |
+| Real synthetic transcript reader | Passed on 67,422,799 bytes and 1,024 prompts; this run measured 2,159 ms initial read and 7 ms append |
+| Real Inbox, Image View and Prompt Rail modules | All six registration orders passed |
+
+Before implementation, the two missing-row hook regressions failed because no
+browser launch was requested. Separate URL/fragment regressions exposed and then
+verified fixes for malformed-link errors, stale fragments and case-insensitive
+duplicate text. The first integration into the host validator rejected an
+engine-taking nested helper and then a cross-module engine argument. Moving the
+navigation helper to file scope and passing a local process adapter to the pure
+resolver made the strict validator pass.
+
+Live local evidence, using the already installed AgentsView 0.45.0:
+
+- Inspected the returned session URL and installed frontend's `msg` query
+  handling. Message ordinals, not list positions or database IDs, are required.
+- A comparison at archived ordinal 946 selected the right message but left it
+  above the viewport. Adding a short plain-text Chrome fragment brought that
+  selected message into view; its screenshot was inspected.
+- The implemented resolver parsed a real current source transcript using the
+  rail's own parser/indexer, retained the source timestamp, and matched an old
+  user prompt to archive ordinal 667. It used two local CLI reads, measured at
+  122 ms in this run. No model was called and no archive data was changed.
+- The final fresh Chrome check of that generated link remained at
+  `Loading messages...`; the same ordinal link without a fragment did too.
+  Background and visible-tab screenshots were inspected. Consequently, final
+  browser painting for that case is **not** claimed as verified. The earlier
+  successful fragment experiment does not prove every viewer state works.
+- An apparent timestamp discrepancy was traced to a compaction summary quoting
+  the older message, not an original prompt. Such summary rows remain excluded
+  from the rail. No incorrect-timestamp workaround was added.
+
+The automated checks mock engine boundaries, including Chrome launch; they do
+not prove a physical terminal click. The resolver's real CLI lookup and the
+browser experiments above are separate evidence. A text fragment is only a
+best-effort positioning aid; the validated session and ordinal remain the
+message identity. No AgentsView rebuild, sync command, installation or settings
+change was performed.
+
+The older sections below record the 0.7.2 baseline, not this release's current
+installation or browser verification.
+
 ## Changes
 
 - A successful jump no longer replaces real viewport observations with a synthetic target row. This fixes the reproduced case where unchanged whole rows disappear from the reading indicator after the next turn.

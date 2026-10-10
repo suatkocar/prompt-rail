@@ -38,6 +38,8 @@ jobs:
         run: npm test
       - name: Test navigation against the actual hook module
         run: npm run test:navigation
+      - name: Test local archive resolution and failure handling
+        run: npm run test:archive
       - name: Test real large transcript files and reader processes
         run: npm run test:transcripts
       - uses: actions/checkout@v6

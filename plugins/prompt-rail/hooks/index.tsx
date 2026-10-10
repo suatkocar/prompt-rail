@@ -1,4 +1,5 @@
 import type { EngineInterface, Register, RenderElement, Timer } from 'claude-code'
+import { archiveIdentity, openArchivedPrompt, type ArchivePrompt, type ArchiveRun } from './agentsview'
 
 const PANE = 'prompt-rail'
 // Rows the person typed (terminal composer, desktop/remote bridge, SDK host).
@@ -81,7 +82,7 @@ const STEP_COMMANDS = [
 type Mode = 'off' | 'vertical' | 'horizontal'
 const isMode = (value: unknown): value is Mode => value === 'off' || value === 'vertical' || value === 'horizontal'
 
-type Entry = { id: string; text: string }
+type Entry = ArchivePrompt
 
 // The key rows are matched by. A message the engine splits into several rows
 // is drawn under ids derived from its stored uuid, the first four groups kept
@@ -350,7 +351,7 @@ const indexRows = (rows: any[]): TranscriptIndex => {
       const prompt = row.attachment.prompt
       const text = typeof prompt === 'string' ? prompt.replace(VIEW_CONTEXT, '').trim() : ''
       if (!text || WRAPPER.test(text) || text.startsWith('/')) continue
-      prompts.push({ id: row.uuid, text })
+      prompts.push({ id: row.uuid, text, ...(typeof row.timestamp === 'string' ? { timestamp: row.timestamp } : {}) })
       turns.push({ tools: 0, files: [] })
       times.push({ start: NaN, last: NaN })
       continue
@@ -377,7 +378,7 @@ const indexRows = (rows: any[]): TranscriptIndex => {
     // A slash command's own row is not a prompt: the render hook skips it too,
     // so it is never drawn and could not be scrolled to.
     if (!text || WRAPPER.test(text) || text.startsWith('/')) continue
-    prompts.push({ id: row.uuid, text })
+    prompts.push({ id: row.uuid, text, ...(typeof row.timestamp === 'string' ? { timestamp: row.timestamp } : {}) })
     turns.push({ tools: 0, files: [] })
     started = prompts.length - 1
     const at = Date.parse(row.timestamp)
@@ -581,18 +582,24 @@ async function writeMode($: EngineInterface, mode: Mode) {
 // transcript row moves only then. Records whether the prompt could be reached,
 // and returns whether the transcript scrolled to it. Where the view cannot
 // scroll at all, says so once a session (`notices.isUnscrollableSaid`).
-async function jumpTo($: EngineInterface, id: string, target: string, unreachable: Set<string>, notices: { isUnscrollableSaid: boolean }) {
+async function jumpTo($: EngineInterface, id: string, target: string, unreachable: Set<string>, notices: { isUnscrollableSaid: boolean }, archive?: () => Promise<void>, isCurrent = () => true) {
   try {
     const result = await $.ui.scroll({ to: { requestId: target }, block: 'start' })
+    if (!isCurrent()) return false
+    if (noteScroll(unreachable, id, result.deny)) await redrawRail($)
+    if (!isCurrent()) return false
+    if (result.deny && NOT_DRAWN.test(result.deny) && archive) {
+      await archive()
+      return false
+    }
     if (result.deny) {
       const notice = jumpNotice(result.deny, notices.isUnscrollableSaid)
       if (notice !== undefined) $.ui.toast(notice)
       if (UNSCROLLABLE.test(result.deny)) notices.isUnscrollableSaid = true
     }
-    if (noteScroll(unreachable, id, result.deny)) await redrawRail($)
     return !result.deny
   } catch (err) {
-    $.ui.toast((err as Error).message)
+    if (isCurrent()) $.ui.toast((err as Error).message)
     return false
   }
 }
@@ -644,8 +651,45 @@ async function rememberedTranscript($: EngineInterface) {
   return typeof value?.path === 'string' ? value.path : undefined
 }
 
+type Navigation = { generation: number; pending?: { id: string; at: number } }
+type NavigationContext = {
+  state: Navigation
+  drawn: Map<string, string>
+  unreachable: Set<string>
+  notices: { isUnscrollableSaid: boolean }
+  allowArchive: boolean
+  landOn: (id: string, index: number) => { isSettled: boolean }
+  isDrawnStale: () => boolean
+}
+
+// Engine-taking helpers must be top-level for the function-hook validator.
+async function navigateTo($: EngineInterface, entry: Entry, index: number, context: NavigationContext) {
+  const { state, drawn, unreachable, notices, allowArchive, landOn, isDrawnStale } = context
+  if (state.pending?.id === entry.id) return
+  const at = ++state.generation
+  state.pending = { id: entry.id, at }
+  const isCurrent = () => at === state.generation
+  const runArchiveCommand: ArchiveRun = (argv, config) => $.process.run(argv, config)
+  const archive = allowArchive ? async () => {
+    $.ui.toast('This message is not loaded in the terminal. Finding it in AgentsView…')
+    const id = await $.session.id()
+    if (isCurrent()) await openArchivedPrompt(runArchiveCommand, id, entry, isCurrent)
+    if (isCurrent()) $.ui.toast('Opened the archived message in AgentsView.')
+  } : undefined
+  try {
+    if (await jumpTo($, entry.id, drawnRow(drawn, entry.id), unreachable, notices, archive, isCurrent) && isCurrent()) {
+      const jump = landOn(entry.id, index)
+      $.clock.after(SETTLE_MAX_MS, () => { jump.isSettled = true })
+      if (isDrawnStale()) await redrawRail($)
+    }
+  } finally {
+    if (state.pending?.at === at) state.pending = undefined
+  }
+}
+
 export const register: Register = (on, options) => {
   let entries: Entry[] = []
+  const navigation: Navigation = { generation: 0 }
   // Assistant row key -> the key of the prompt it answers, from the transcript.
   let owners = new Map<string, string>()
   // Prompt id -> the turn it started, from the transcript.
@@ -1066,14 +1110,10 @@ export const register: Register = (on, options) => {
         return {}
       }
       const entry = entries[index]
-      const target = entry && drawnRow(drawn, entry.id)
-      if (entry && target && (await jumpTo($, entry.id, target, unreachable, notices))) {
-        const jump = landOn(entry.id, index)
-        $.clock.after(SETTLE_MAX_MS, () => {
-          jump.isSettled = true
-        })
-        if (isDrawnStale()) await redrawRail($)
-      }
+      if (entry) await navigateTo($, archiveIdentity(entry, entries), index, {
+        state: navigation, drawn, unreachable, notices, landOn, isDrawnStale,
+        allowArchive: options.agentsViewFallback !== false && !isStep && asked !== 'next' && asked !== 'prev',
+      })
       if (!entry) $.ui.toast(missingFor(e.command, asked))
       return {}
     }
@@ -1120,6 +1160,8 @@ export const register: Register = (on, options) => {
   }
 
   on('classic.SessionStart', async ($, e, next) => {
+    navigation.generation++
+    navigation.pending = undefined
     if (e.source === 'clear') {
       entries = []
       owners = new Map()
@@ -1504,14 +1546,10 @@ export const register: Register = (on, options) => {
     const index = Number(/^jump-(\d+)/.exec(e.element)?.[1])
     unring()
     const entry = entries[index]
-    const target = entry && drawnRow(drawn, entry.id)
-    if (entry && target && (await jumpTo($, entry.id, target, unreachable, notices))) {
-      const jump = landOn(entry.id, index)
-      $.clock.after(SETTLE_MAX_MS, () => {
-        jump.isSettled = true
-      })
-      if (isDrawnStale()) await redrawRail($)
-    }
+    if (entry && viewAgent === undefined) await navigateTo($, archiveIdentity(entry, entries), index, {
+      state: navigation, drawn, unreachable, notices, landOn, isDrawnStale,
+      allowArchive: options.agentsViewFallback !== false,
+    })
     return next(e)
   })
 }

@@ -1,6 +1,6 @@
 {
   "name": "prompt-rail",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "A rail of your session's prompts beside the transcript or above the prompt; hover to read one, click to jump to it.",
   "author": {
     "name": "oikon48"
@@ -16,6 +16,12 @@
   ],
   "types": "./types/prompt-rail.d.ts",
   "userConfig": {
+    "agentsViewFallback": {
+      "type": "boolean",
+      "title": "AgentsView archive fallback",
+      "description": "When a clicked prompt is not loaded in the terminal, find the exact message through the local AgentsView CLI and open it in Google Chrome on macOS. No model call. Next/prev shortcuts stay terminal-only.",
+      "default": true
+    },
     "mode": {
       "type": "string",
       "title": "Rail mode",

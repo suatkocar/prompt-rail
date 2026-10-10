@@ -15,7 +15,7 @@ A rail of your prompts for Claude Code. Hover to read one, click to jump back to
 
 ## Personal fork
 
-Based on [oikon48/prompt-rail](https://github.com/oikon48/prompt-rail). Version 0.7.2 preserves observed viewport rows across jumps and composes the prompt band with other mods instead of replacing it. Inbox also needs its shared-band compatibility fix; [validation and upstream notes](docs/validation.md) record the tested combination.
+Based on [oikon48/prompt-rail](https://github.com/oikon48/prompt-rail). Version 0.7.3 adds an AgentsView fallback for prompts no longer drawn in the terminal. It preserves observed viewport rows across jumps and composes the prompt band with other mods instead of replacing it. Inbox also needs its shared-band compatibility fix; [validation and upstream notes](docs/validation.md) record the tested combination.
 
 ## Quick start
 
@@ -90,6 +90,36 @@ In the horizontal layout, `ctrl+x tab` moves the focus to the bars: the ring sta
 | `─` `│` | Any other prompt |
 | `┄` `┆` | A prompt Claude Code refused to scroll to; `next` and `prev` skip it |
 
+### Archived prompts
+
+Clicking a prompt first tries Claude Code's native transcript scroll. If the
+host specifically reports that no row is drawn under its request ID, the rail
+looks up the same session through the local `agentsview` CLI and opens the
+matching message in **Google Chrome on macOS**. Numbered, `first`, `last` and
+`find` commands have the same fallback. Repeated `next`/`prev` stepping stays in
+the terminal. Opening an archive does not move the terminal's reading marker.
+
+The resolver prefers the full message UUID. Legacy records without a UUID need
+the same timestamp and full text. If a timestamp is missing, a full text of at
+least 32 characters must be unique in both session indexes; conflicting known
+timestamps and ambiguous matches are rejected. Missing, unavailable or changed
+archives produce a clear notice instead of opening a guessed message.
+
+AgentsView must already be installed and have indexed the conversation. Its CLI
+discovers the local server and returns the session URL; no port is hardcoded.
+There are no model calls, external search requests, index rebuilds or startup
+scans. A click reads user-message pages, bounded to 12 seconds, 32 pages of 64
+messages and 16 MiB of accumulated CLI output. These are lookup limits, not
+limits on the source transcript size. No extra transcript copy is saved.
+
+The link uses AgentsView's `msg` ordinal. For sufficiently long, plain text
+unique among the scanned user messages, it also includes a Chrome text fragment
+to counter an observed scroll-position drift in the viewer. The fragment is a
+best-effort positioning aid, not the message identity; repeated or formatted
+text may rely on the viewer's own positioning. Fragment text is part of the
+browser history. Disable **AgentsView archive fallback** in `/config` for
+terminal-only navigation.
+
 ## How it works
 
 <details>
@@ -130,7 +160,7 @@ npm run check
 
 An interactive session loading this checkout generates the SDK declarations in `plugins/prompt-rail/.claude-plugin/types/`. The root TypeScript configuration extends that generated configuration; the declarations stay untracked. The check script can copy them from the canonical checkout when running in a worktree. It fails explicitly if they are missing.
 
-`npm run check` validates the marketplace and plugin, type-checks the hook and test code, runs the Claude Code test suite, tests jump routing against real hooks with deterministic engine boundaries, and reads actual synthetic large transcript files through `tail`. The latter requires macOS or Linux.
+`npm run check` validates the marketplace and plugin, type-checks the hook and test code, runs the Claude Code test suite, tests jump routing and archive matching against real modules with deterministic engine boundaries, and reads actual synthetic large transcript files through `tail`. The latter requires macOS or Linux.
 
 To exercise the actual Inbox and Image View modules in all six load orders:
 
